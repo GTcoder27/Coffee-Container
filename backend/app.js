@@ -122,9 +122,9 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
     await setDoc(docRef, uploadData);
 
     const curlCommand = `curl.exe -L "${req.protocol}://${req.get('host')}/api/download/${secretCode}" -o "${secretCode}.zip"`;
-    
-    res.json({ 
-      success: true, 
+
+    res.json({
+      success: true,
       message: 'Upload successful',
       id: secretCode,
       fileUrl,
@@ -142,7 +142,7 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
     });
   } catch (error) {
     console.error('Upload error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Upload failed: ' + error.message,
       details: error.stack
     });
@@ -154,13 +154,13 @@ app.get('/api/file/:secretCode', async (req, res) => {
     const { secretCode } = req.params;
     const docRef = doc(db, 'uploads', secretCode);
     const docSnap = await getDoc(docRef);
-    
+
     if (!docSnap.exists()) {
       return res.status(404).json({ error: 'No content found for this secret code' });
     }
 
     const uploadData = docSnap.data();
-    
+
     if (!uploadData.fileUrl) {
       return res.status(404).json({ error: 'No file found for this secret code' });
     }
@@ -173,7 +173,7 @@ app.get('/api/file/:secretCode', async (req, res) => {
 
     res.setHeader('Content-Type', uploadData.fileDetails?.mimeType || 'application/octet-stream');
     res.setHeader('Content-Disposition', `attachment; filename="${uploadData.fileDetails?.originalName || 'file'}"`);
-    
+
     response.data.pipe(res);
   } catch (error) {
     console.error('File download error:', error);
@@ -186,16 +186,34 @@ app.get('/api/download/:secretCode', async (req, res) => {
     const { secretCode } = req.params;
     const docRef = doc(db, 'uploads', secretCode);
     const docSnap = await getDoc(docRef);
-    
+
     if (!docSnap.exists()) {
       return res.status(404).json({ error: 'No content found for this secret code' });
     }
 
     const uploadData = docSnap.data();
-    res.json({
-      text: uploadData.text,
-      fileUrl: uploadData.fileUrl
+    const fileUrl = uploadData.fileUrl;
+
+    if (!fileUrl) {
+      return res.status(400).json({ error: 'No file URL found in document' });
+    }
+
+    // Attempt to get filename from URL query string (e.g., fl_attachment=filename.ext)
+    const urlObj = new URL(fileUrl);
+    const filename = urlObj.searchParams.get('fl_attachment') || `${secretCode}.download`;
+
+    // Set headers
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Type', 'application/octet-stream');
+
+    // Stream file directly from Cloudinary to client
+    const fileResponse = await axios({
+      method: 'get',
+      url: fileUrl,
+      responseType: 'stream',
     });
+
+    fileResponse.data.pipe(res);
   } catch (error) {
     console.error('Download error:', error);
     res.status(500).json({ error: 'Download failed: ' + error.message });

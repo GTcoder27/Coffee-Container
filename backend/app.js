@@ -57,13 +57,12 @@ const upload = multer({
     fileSize: 10 * 1024 * 1024 // 10MB limit
   },
   fileFilter: (req, file, cb) => {
-    // Accept all file types
     cb(null, true);
   }
 });
 
-// Upload endpoint
-app.post('/upload', upload.single('file'), async (req, res) => {
+// API Routes
+app.post('/api/upload', upload.single('file'), async (req, res) => {
   try {
     const { secretCode, text } = req.body;
     const file = req.file;
@@ -72,7 +71,6 @@ app.post('/upload', upload.single('file'), async (req, res) => {
       return res.status(400).json({ error: 'Secret code is required' });
     }
 
-    // Check if document with this secret code already exists
     const docRef = doc(db, 'uploads', secretCode);
     const docSnap = await getDoc(docRef);
 
@@ -83,29 +81,17 @@ app.post('/upload', upload.single('file'), async (req, res) => {
     let fileUrl = null;
     let fileDetails = null;
     if (file) {
-      // console.log('File details:', {
-      //   originalname: file.originalname,
-      //   mimetype: file.mimetype,
-      //   size: file.size
-      // });
-
-      // Create a temporary file
       const tempFilePath = path.join(os.tmpdir(), file.originalname);
       fs.writeFileSync(tempFilePath, file.buffer);
 
       try {
-        // Upload to Cloudinary with raw resource type
         const uploadOptions = {
           resource_type: "raw",
           public_id: `${secretCode}_${Date.now()}`,
           overwrite: true
         };
 
-        // console.log('Uploading to Cloudinary with options:', uploadOptions);
         const result = await cloudinary.uploader.upload(tempFilePath, uploadOptions);
-        // console.log('Cloudinary upload result:', result);
-        
-        // Add fl_attachment flag to the URL
         fileUrl = `${result.secure_url}?fl_attachment=${encodeURIComponent(file.originalname)}`;
         fileDetails = {
           originalName: file.originalname,
@@ -117,7 +103,6 @@ app.post('/upload', upload.single('file'), async (req, res) => {
         console.error('Cloudinary upload error:', uploadError);
         throw new Error(`Failed to upload file to Cloudinary: ${uploadError.message}`);
       } finally {
-        // Clean up temporary file
         try {
           fs.unlinkSync(tempFilePath);
         } catch (unlinkError) {
@@ -126,7 +111,6 @@ app.post('/upload', upload.single('file'), async (req, res) => {
       }
     }
 
-    // Store in Firebase using secret code as document ID
     const uploadData = {
       secretCode,
       text: text || '',
@@ -135,11 +119,9 @@ app.post('/upload', upload.single('file'), async (req, res) => {
       fileDetails
     };
 
-    // console.log('Storing in Firebase:', uploadData);
     await setDoc(docRef, uploadData);
 
-    // Generate curl command for downloading
-    const curlCommand = `curl.exe -L "http://localhost:3000/download/${secretCode}" -o "${secretCode}.zip"`;
+    const curlCommand = `curl.exe -L "${req.protocol}://${req.get('host')}/api/download/${secretCode}" -o "${secretCode}.zip"`;
     
     res.json({ 
       success: true, 
@@ -167,8 +149,7 @@ app.post('/upload', upload.single('file'), async (req, res) => {
   }
 });
 
-// Direct file download endpoint
-app.get('/file/:secretCode', async (req, res) => {
+app.get('/api/file/:secretCode', async (req, res) => {
   try {
     const { secretCode } = req.params;
     const docRef = doc(db, 'uploads', secretCode);
@@ -184,18 +165,15 @@ app.get('/file/:secretCode', async (req, res) => {
       return res.status(404).json({ error: 'No file found for this secret code' });
     }
 
-    // Get the file from Cloudinary
     const response = await axios({
       method: 'GET',
       url: uploadData.fileUrl,
       responseType: 'stream'
     });
 
-    // Set appropriate headers
     res.setHeader('Content-Type', uploadData.fileDetails?.mimeType || 'application/octet-stream');
     res.setHeader('Content-Disposition', `attachment; filename="${uploadData.fileDetails?.originalName || 'file'}"`);
     
-    // Stream the file to the response
     response.data.pipe(res);
   } catch (error) {
     console.error('File download error:', error);
@@ -203,14 +181,9 @@ app.get('/file/:secretCode', async (req, res) => {
   }
 });
 
-// Download endpoint
-app.get('/download/:secretCode', async (req, res) => {
+app.get('/api/download/:secretCode', async (req, res) => {
   try {
     const { secretCode } = req.params;
-    const userAgent = req.headers['user-agent'] || '';
-    const isCurl = userAgent.toLowerCase().includes('curl');
-    
-    // Get document directly using secret code as ID
     const docRef = doc(db, 'uploads', secretCode);
     const docSnap = await getDoc(docRef);
     
@@ -219,55 +192,13 @@ app.get('/download/:secretCode', async (req, res) => {
     }
 
     const uploadData = docSnap.data();
-    // console.log('Download request for:', uploadData);
-
-    // If it's a curl request, create a zip file with all content
-    if (isCurl) {
-      const archiver = require('archiver');
-      const archive = archiver('zip', {
-        zlib: { level: 9 }
-      });
-
-      res.setHeader('Content-Type', 'application/zip');
-      res.setHeader('Content-Disposition', `attachment; filename=${secretCode}.zip`);
-      
-      archive.pipe(res);
-
-      // Add text content to a file
-      if (uploadData.text) {
-        const textContent = `Text from ${new Date(uploadData.timestamp).toLocaleString()}:\n${uploadData.text}\n\n`;
-        archive.append(textContent, { name: 'text_content.txt' });
-      }
-
-      // Download and add file from Cloudinary if exists
-      if (uploadData.fileUrl) {
-        try {
-          // console.log('Downloading file from Cloudinary:', uploadData.fileUrl);
-          const response = await axios({
-            method: 'GET',
-            url: uploadData.fileUrl,
-            responseType: 'stream'
-          });
-          
-          const fileName = uploadData.fileDetails?.originalName || path.basename(uploadData.fileUrl);
-          archive.append(response.data, { name: fileName });
-        } catch (error) {
-          console.error('Error downloading file:', error);
-          throw new Error(`Failed to download file: ${error.message}`);
-        }
-      }
-
-      await archive.finalize();
-    } else {
-      // For browser requests, return JSON
-      res.json(uploadData);
-    }
+    res.json({
+      text: uploadData.text,
+      fileUrl: uploadData.fileUrl
+    });
   } catch (error) {
     console.error('Download error:', error);
-    res.status(500).json({ 
-      error: 'Download failed: ' + error.message,
-      details: error.stack
-    });
+    res.status(500).json({ error: 'Download failed: ' + error.message });
   }
 });
 

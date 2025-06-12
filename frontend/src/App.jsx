@@ -5,7 +5,7 @@ import {Toaster} from "react-hot-toast";
 import toast from "react-hot-toast";
 
 // Use relative URLs since we're serving from the same domain
-const API_URL = '';
+const API_URL = '/api';
 
 function App() {
   const [secretCode, setSecretCode] = useState('');
@@ -15,9 +15,6 @@ function App() {
   const [downloadData, setDownloadData] = useState(null);
   const [uploadedContent, setUploadedContent] = useState(null);
   const [isLoading, setisLoading] = useState(false);
-
-
-
 
   const handleFileChange = (e) => {
     const selectedFile = e.target.files[0];
@@ -104,18 +101,18 @@ function App() {
     }
   };
 
-  const errormessagepopup = (message)=>{
+  const errormessagepopup = (message) => {
     toast.error(message);
-  }
-  const successmessagepopup = (message)=>{
-    toast.success(message);
-  }
+  };
 
+  const successmessagepopup = (message) => {
+    toast.success(message);
+  };
 
   return (
     <div className="container">
       <h1>Coffee-Container</h1>
-       <h2> -- Secret File Sharing -- </h2>
+      <h2> -- Secret File Sharing -- </h2>
       
       <div className="upload-section">
         <h2>Upload Content</h2>

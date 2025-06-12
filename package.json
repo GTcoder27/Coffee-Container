@@ -4,8 +4,8 @@
   "description": "Coffee Container - Secret File Sharing Application",
   "scripts": {
     "install-all": "npm install && cd frontend && npm install && cd ../backend && npm install",
-    "build": "cd backend && npm install",
-    "start": "cd backend && node app.js",
+    "build": "npm install --prefix backend && npm install --prefix frontend",
+    "start": "npm run start --prefix backend",
     "dev": "cd frontend && npm run build && cd ../backend && node app.js"
   },
   "engines": {
